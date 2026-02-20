@@ -1,0 +1,12 @@
+{
+  "name": "github-slideshow-mcp-ui",
+  "version": "2.0.0",
+  "private": true,
+  "description": "MCP server with web UI for multi-file ingestion and Claude Desktop bridge",
+  "main": "mcp-ui/server.js",
+  "scripts": {
+    "start": "node mcp-ui/server.js",
+    "mcp:claude": "node mcp-ui/claude-desktop-mcp.js",
+    "lint": "node --check mcp-ui/server.js && node --check mcp-ui/claude-desktop-mcp.js && node --check mcp-ui/file-store.js"
+  }
+}
