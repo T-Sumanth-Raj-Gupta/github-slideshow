@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MCP Upload Studio</title>
+    <style>
+      :root {
+        --bg: #070b1a;
+        --card: rgba(255, 255, 255, 0.09);
+        --text: #e7ecff;
+        --muted: #b5c1ff;
+        --accent: #7c4dff;
+        --accent-2: #00c2ff;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Inter, Segoe UI, Arial, sans-serif;
+        color: var(--text);
+        background: radial-gradient(circle at 10% 20%, #2e1a5f 0%, transparent 40%),
+          radial-gradient(circle at 95% 10%, #063a6b 0%, transparent 35%),
+          linear-gradient(160deg, #050712, #0d1530 55%, #090b17);
+        min-height: 100vh;
+      }
+      .container { max-width: 1120px; margin: 0 auto; padding: 2.5rem 1.25rem 3rem; }
+      h1 { margin: 0; font-size: 2.2rem; }
+      .hero { display: grid; grid-template-columns: 1.4fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+      .glass {
+        background: var(--card);
+        border: 1px solid rgba(255,255,255,.18);
+        border-radius: 20px;
+        padding: 1rem 1.1rem;
+        backdrop-filter: blur(12px);
+        box-shadow: 0 12px 38px rgba(0, 0, 0, 0.45);
+      }
+      .subtitle { color: var(--muted); line-height: 1.6; margin-top: .6rem; }
+      .metric { font-size: 2rem; font-weight: 700; margin-top: .2rem; }
+      .row { display:flex; flex-wrap:wrap; gap:.75rem; align-items:center; }
+      .panel { margin-top: 1rem; }
+      .grid { display:grid; grid-template-columns: 1fr 1fr; gap:1rem; }
+      button, .fileInput {
+        border: 0;
+        border-radius: 12px;
+        padding: .62rem 1rem;
+        font-weight: 600;
+      }
+      button {
+        cursor:pointer;
+        color:white;
+        background: linear-gradient(120deg, var(--accent), #5a67ff 55%, var(--accent-2));
+        transition: transform .15s ease;
+      }
+      button:hover { transform: translateY(-1px); }
+      .ghost { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18); }
+      .fileInput { background: rgba(255,255,255,.16); color: white; }
+      ul { list-style: none; padding: 0; margin: .25rem 0 0; max-height: 360px; overflow: auto; }
+      li { padding: .5rem 0; border-bottom: 1px solid rgba(255,255,255,.1); }
+      .fileBtn { width: 100%; text-align: left; background: transparent; padding: .15rem 0; color: var(--text); }
+      pre {
+        white-space: pre-wrap;
+        background: #040612;
+        border: 1px solid rgba(255,255,255,.12);
+        border-radius: 14px;
+        padding: .8rem;
+        min-height: 330px;
+        overflow: auto;
+      }
+      .muted { color: var(--muted); font-size: .92rem; }
+      @media (max-width: 900px) { .hero, .grid { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <section class="hero">
+        <article class="glass">
+          <h1>MCP Upload Studio</h1>
+          <p class="subtitle">Upload many file types, preview what got indexed, and wire the same dataset directly into Claude Desktop through MCP stdio transport.</p>
+          <div class="row">
+            <input id="files" class="fileInput" type="file" multiple />
+            <button id="upload">Upload files</button>
+            <button id="refresh" class="ghost">Refresh</button>
+          </div>
+          <p id="status" class="muted">Ready.</p>
+        </article>
+        <aside class="glass">
+          <div class="muted">Indexed files</div>
+          <div id="fileCount" class="metric">0</div>
+          <div class="muted">The Claude Desktop MCP server reads this same local store.</div>
+        </aside>
+      </section>
+
+      <section class="grid panel">
+        <article class="glass">
+          <h2>Uploaded files</h2>
+          <p class="muted">Choose which files to send directly to Claude Desktop.</p>
+          <ul id="fileList"></ul>
+        </article>
+
+        <article class="glass">
+          <h2>File preview</h2>
+          <pre id="content">Select a file from the left to inspect parsed content.</pre>
+        </article>
+      </section>
+
+      <section class="glass panel">
+        <h2>Send to Claude Desktop</h2>
+        <p class="muted">Click below to fetch a ready-to-paste `mcpServers` config snippet for Claude Desktop.</p>
+        <div class="row">
+          <button id="loadConfig">Load Claude config snippet</button>
+          <button id="copyConfig" class="ghost">Copy snippet</button>
+          <button id="sendToClaude">Send selected files to Claude</button>
+        </div>
+        <pre id="claudeConfig">No snippet loaded yet.</pre>
+      </section>
+    </div>
+
+    <script>
+      const fileList = document.getElementById('fileList');
+      const content = document.getElementById('content');
+      const status = document.getElementById('status');
+      const fileCount = document.getElementById('fileCount');
+      const claudeConfig = document.getElementById('claudeConfig');
+
+      function toBase64(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result).split(',')[1] || '');
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }
+
+      async function refreshFiles() {
+        const res = await fetch('/api/files');
+        const data = await res.json();
+        fileList.innerHTML = '';
+        fileCount.textContent = data.files.length;
+
+        data.files.forEach((file) => {
+          const li = document.createElement('li');
+          li.innerHTML = `<label class="row"><input type="checkbox" class="sendCheck" value="${file.id}" /><button class="fileBtn" data-id="${file.id}">${file.name}</button></label><div class="muted">${file.mimeType} · ${file.size} bytes · ${file.contentType}</div>`;
+          fileList.appendChild(li);
+        });
+
+        document.querySelectorAll('.fileBtn').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const res = await fetch(`/api/files/${btn.dataset.id}`);
+            const data = await res.json();
+            content.textContent = JSON.stringify(data, null, 2);
+          });
+        });
+      }
+
+      document.getElementById('upload').addEventListener('click', async () => {
+        const input = document.getElementById('files');
+        if (!input.files.length) {
+          status.textContent = 'Please select one or more files.';
+          return;
+        }
+
+        status.textContent = 'Uploading...';
+        const files = await Promise.all(Array.from(input.files).map(async (file) => ({
+          name: file.name,
+          mimeType: file.type,
+          base64: await toBase64(file)
+        })));
+
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ files })
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          status.textContent = data.error || 'Upload failed';
+          return;
+        }
+
+        status.textContent = `Uploaded ${data.uploaded.length} file(s).`;
+        input.value = '';
+        refreshFiles();
+      });
+
+      document.getElementById('refresh').addEventListener('click', refreshFiles);
+
+      document.getElementById('loadConfig').addEventListener('click', async () => {
+        const res = await fetch('/api/claude-desktop-config');
+        const data = await res.json();
+        claudeConfig.textContent = JSON.stringify(data.configSnippet, null, 2);
+      });
+
+      document.getElementById('copyConfig').addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(claudeConfig.textContent);
+          status.textContent = 'Claude config snippet copied.';
+        } catch {
+          status.textContent = 'Clipboard copy failed. Copy manually from the snippet box.';
+        }
+      });
+
+      document.getElementById('sendToClaude').addEventListener('click', async () => {
+        const selectedIds = Array.from(document.querySelectorAll('.sendCheck:checked')).map((node) => node.value);
+        const res = await fetch('/api/claude/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fileIds: selectedIds })
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          status.textContent = data.error || 'Failed to prepare Claude payload.';
+          return;
+        }
+
+        claudeConfig.textContent = data.payload;
+
+        try {
+          await navigator.clipboard.writeText(data.payload);
+          status.textContent = 'Payload copied. Opening Claude Desktop...';
+        } catch {
+          status.textContent = 'Could not copy automatically. Opening Claude Desktop with deep-link attempt.';
+        }
+
+        try {
+          window.location.href = data.claudeDeepLink;
+        } catch {
+          status.textContent = 'Deep-link launch failed. Paste payload into Claude Desktop manually.';
+        }
+      });
+
+      refreshFiles();
+    </script>
+  </body>
+</html>
